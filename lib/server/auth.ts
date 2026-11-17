@@ -1,7 +1,7 @@
 import { randomBytes, createHash, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { cookies } from "next/headers";
-import { getDb } from "@/lib/server/db";
+import { getDb, queryOne } from "@/lib/server/db";
 
 const scrypt = promisify(scryptCallback);
 const COOKIE_NAME = "cashihan-session";
@@ -27,8 +27,10 @@ function tokenHash(token: string) {
 
 export async function createSession(userId: string) {
     const token = randomBytes(32).toString("hex");
-    getDb().prepare("INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)")
-        .run(tokenHash(token), userId, Date.now() + SESSION_SECONDS * 1000);
+    await (await getDb()).execute({
+        sql: "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+        args: [tokenHash(token), userId, Date.now() + SESSION_SECONDS * 1000],
+    });
     (await cookies()).set(COOKIE_NAME, token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
@@ -41,17 +43,17 @@ export async function createSession(userId: string) {
 export async function getUser() {
     const token = (await cookies()).get(COOKIE_NAME)?.value;
     if (!token) return null;
-    return getDb().prepare(`
+    return await queryOne<{ id: string; name: string; email: string }>(await getDb(), `
         SELECT users.id, users.name, users.email FROM sessions
         JOIN users ON users.id = sessions.user_id
         WHERE sessions.token_hash = ? AND sessions.expires_at > ?
-    `).get(tokenHash(token), Date.now()) as { id: string; name: string; email: string } | undefined || null;
+    `, [tokenHash(token), Date.now()]) || null;
 }
 
 export async function deleteSession() {
     const store = await cookies();
     const token = store.get(COOKIE_NAME)?.value;
-    if (token) getDb().prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash(token));
+    if (token) await (await getDb()).execute({ sql: "DELETE FROM sessions WHERE token_hash = ?", args: [tokenHash(token)] });
     store.delete(COOKIE_NAME);
 }
 

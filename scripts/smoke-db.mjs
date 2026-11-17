@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import Database from "better-sqlite3";
+import { createClient } from "@libsql/client";
 import { existsSync } from "node:fs";
 
 const base = process.env.CASHIHAN_TEST_URL || "http://localhost:3217";
@@ -98,8 +98,8 @@ try {
     console.log("Database smoke test passed");
 } finally {
     if (existsSync(".data/cashihan.sqlite")) {
-        const db = new Database(".data/cashihan.sqlite");
-        db.prepare("DELETE FROM users WHERE email IN (?, ?, ?)").run(...emails);
+        const db = createClient({ url: "file:.data/cashihan.sqlite" });
+        await db.execute({ sql: "DELETE FROM users WHERE email IN (?, ?, ?)", args: emails });
         db.close();
     }
 }

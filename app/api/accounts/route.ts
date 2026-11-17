@@ -15,7 +15,9 @@ export async function POST(request: Request) {
         return Response.json({ error: "Invalid account details." }, { status: 400 });
     }
     const account = { id: randomUUID(), name, number, balance: body.balance };
-    getDb().prepare("INSERT INTO accounts(id, user_id, name, number, opening_balance) VALUES (?, ?, ?, ?, ?)")
-        .run(account.id, user.id, name, number, account.balance);
+    await (await getDb()).execute({
+        sql: "INSERT INTO accounts(id, user_id, name, number, opening_balance) VALUES (?, ?, ?, ?, ?)",
+        args: [account.id, user.id, name, number, account.balance],
+    });
     return Response.json({ account }, { status: 201 });
 }

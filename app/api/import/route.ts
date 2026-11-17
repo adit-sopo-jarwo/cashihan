@@ -1,6 +1,6 @@
 import { getUser, sameOrigin } from "@/lib/server/auth";
-import { getDb } from "@/lib/server/db";
-import { balances, userAccounts, validMoney, type AccountRow, type TransactionRow } from "@/lib/server/finance";
+import { queryOne, withTransaction } from "@/lib/server/db";
+import { balances, validMoney, type AccountRow, type TransactionRow } from "@/lib/server/finance";
 
 export async function POST(request: Request) {
     if (!sameOrigin(request)) return Response.json({ error: "Invalid origin." }, { status: 403 });
@@ -44,18 +44,23 @@ export async function POST(request: Request) {
     const budgets = rawBudgets.filter((item): item is { month: string; amount: number } =>
         item && typeof item.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(item.month) && validMoney(item.amount, true));
     if (budgets.length !== rawBudgets.length) return Response.json({ error: "Invalid budgets." }, { status: 400 });
-    const db = getDb();
     try {
-        const imported = db.transaction(() => {
-            if (userAccounts(user.id).length > 0) return false;
-            const insertAccount = db.prepare("INSERT INTO accounts(id, user_id, name, number, opening_balance) VALUES (?, ?, ?, ?, ?)");
-            const insertTransaction = db.prepare("INSERT INTO transactions(id, user_id, type, account_id, destination_id, amount, title, note, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            const insertBudget = db.prepare("INSERT INTO budgets(user_id, month, amount) VALUES (?, ?, ?) ON CONFLICT(user_id, month) DO UPDATE SET amount = excluded.amount");
-            for (const account of opening) insertAccount.run(account.id, user.id, account.name, account.number, account.openingBalance);
-            for (const item of rows) insertTransaction.run(item.id, user.id, item.type, item.account_id, item.destination_id, item.amount, item.title, item.note, item.date);
-            for (const budget of budgets) insertBudget.run(user.id, budget.month, budget.amount);
+        const imported = await withTransaction(async (db) => {
+            if (await queryOne(db, "SELECT id FROM accounts WHERE user_id = ? LIMIT 1", [user.id])) return false;
+            for (const account of opening) await db.execute({
+                sql: "INSERT INTO accounts(id, user_id, name, number, opening_balance) VALUES (?, ?, ?, ?, ?)",
+                args: [account.id, user.id, account.name, account.number, account.openingBalance],
+            });
+            for (const item of rows) await db.execute({
+                sql: "INSERT INTO transactions(id, user_id, type, account_id, destination_id, amount, title, note, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                args: [item.id, user.id, item.type, item.account_id, item.destination_id, item.amount, item.title, item.note, item.date],
+            });
+            for (const budget of budgets) await db.execute({
+                sql: "INSERT INTO budgets(user_id, month, amount) VALUES (?, ?, ?) ON CONFLICT(user_id, month) DO UPDATE SET amount = excluded.amount",
+                args: [user.id, budget.month, budget.amount],
+            });
             return true;
-        })();
+        });
         return Response.json({ imported });
     } catch {
         return Response.json({ error: "Could not import local data." }, { status: 400 });

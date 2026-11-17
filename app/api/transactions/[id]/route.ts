@@ -10,7 +10,7 @@ export async function PUT(request: Request, context: Context) {
     let body: unknown;
     try { body = await request.json(); } catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }
     try {
-        return Response.json({ transaction: writeTransaction(user.id, body, (await context.params).id) });
+        return Response.json({ transaction: await writeTransaction(user.id, body, (await context.params).id) });
     } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Could not update transaction." },
             { status: error instanceof TransactionError ? error.status : 500 });
@@ -22,7 +22,7 @@ export async function DELETE(request: Request, context: Context) {
     const user = await getUser();
     if (!user) return Response.json({ error: "Unauthorized." }, { status: 401 });
     try {
-        removeTransaction(user.id, (await context.params).id);
+        await removeTransaction(user.id, (await context.params).id);
         return Response.json({ ok: true });
     } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Could not delete transaction." },

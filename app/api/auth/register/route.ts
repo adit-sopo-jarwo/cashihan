@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDb } from "@/lib/server/db";
+import { getDb, queryOne } from "@/lib/server/db";
 import { createSession, hashPassword, sameOrigin } from "@/lib/server/auth";
 
 export async function POST(request: Request) {
@@ -12,14 +12,16 @@ export async function POST(request: Request) {
     if (name.length < 2 || name.length > 80 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || password.length < 8 || password.length > 128) {
         return Response.json({ error: "Enter a valid name, email, and password of at least 8 characters." }, { status: 400 });
     }
-    const db = getDb();
-    if (db.prepare("SELECT id FROM users WHERE email = ?").get(email)) {
+    const db = await getDb();
+    if (await queryOne(db, "SELECT id FROM users WHERE email = ?", [email])) {
         return Response.json({ error: "Email is already registered." }, { status: 409 });
     }
     const id = randomUUID();
     try {
-        db.prepare("INSERT INTO users(id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)")
-            .run(id, name, email, await hashPassword(password), new Date().toISOString());
+        await db.execute({
+            sql: "INSERT INTO users(id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+            args: [id, name, email, await hashPassword(password), new Date().toISOString()],
+        });
     } catch {
         return Response.json({ error: "Could not create account." }, { status: 500 });
     }

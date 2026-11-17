@@ -11,7 +11,9 @@ export async function PUT(request: Request) {
     if (typeof body.month !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(body.month) || !validMoney(body.amount, true)) {
         return Response.json({ error: "Invalid budget." }, { status: 400 });
     }
-    getDb().prepare("INSERT INTO budgets(user_id, month, amount) VALUES (?, ?, ?) ON CONFLICT(user_id, month) DO UPDATE SET amount = excluded.amount")
-        .run(user.id, body.month, body.amount);
+    await (await getDb()).execute({
+        sql: "INSERT INTO budgets(user_id, month, amount) VALUES (?, ?, ?) ON CONFLICT(user_id, month) DO UPDATE SET amount = excluded.amount",
+        args: [user.id, body.month, body.amount],
+    });
     return Response.json({ month: body.month, amount: body.amount });
 }

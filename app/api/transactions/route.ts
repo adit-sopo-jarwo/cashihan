@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     let body: unknown;
     try { body = await request.json(); } catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }
     try {
-        return Response.json({ transaction: writeTransaction(user.id, body) }, { status: 201 });
+        return Response.json({ transaction: await writeTransaction(user.id, body) }, { status: 201 });
     } catch (error) {
         return Response.json({ error: error instanceof Error ? error.message : "Could not save transaction." },
             { status: error instanceof TransactionError ? error.status : 500 });

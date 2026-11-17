@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/server/db";
+import { getDb, queryRows, type DbConnection } from "@/lib/server/db";
 
 export type AccountRow = { id: string; name: string; number: string; opening_balance: number };
 export type TransactionRow = {
@@ -6,14 +6,14 @@ export type TransactionRow = {
     destination_id: string | null; amount: number; title: string | null; note: string; date: string;
 };
 
-export function userAccounts(userId: string) {
-    return getDb().prepare("SELECT id, name, number, opening_balance FROM accounts WHERE user_id = ? ORDER BY rowid")
-        .all(userId) as AccountRow[];
+export async function userAccounts(userId: string, connection?: DbConnection) {
+    return queryRows<AccountRow>(connection || await getDb(),
+        "SELECT id, name, number, opening_balance FROM accounts WHERE user_id = ? ORDER BY rowid", [userId]);
 }
 
-export function userTransactions(userId: string) {
-    return getDb().prepare("SELECT id, type, account_id, destination_id, amount, title, note, date FROM transactions WHERE user_id = ? ORDER BY date DESC, rowid DESC")
-        .all(userId) as TransactionRow[];
+export async function userTransactions(userId: string, connection?: DbConnection) {
+    return queryRows<TransactionRow>(connection || await getDb(),
+        "SELECT id, type, account_id, destination_id, amount, title, note, date FROM transactions WHERE user_id = ? ORDER BY date DESC, rowid DESC", [userId]);
 }
 
 export function balances(accounts: AccountRow[], transactions: TransactionRow[]) {
@@ -27,11 +27,13 @@ export function balances(accounts: AccountRow[], transactions: TransactionRow[])
     return values;
 }
 
-export function userData(userId: string) {
-    const accounts = userAccounts(userId);
-    const transactions = userTransactions(userId);
+export async function userData(userId: string) {
+    const db = await getDb();
+    const accounts = await userAccounts(userId, db);
+    const transactions = await userTransactions(userId, db);
     const amounts = balances(accounts, transactions);
-    const budgets = getDb().prepare("SELECT month, amount FROM budgets WHERE user_id = ?").all(userId) as { month: string; amount: number }[];
+    const budgets = await queryRows<{ month: string; amount: number }>(db,
+        "SELECT month, amount FROM budgets WHERE user_id = ?", [userId]);
     return {
         accounts: accounts.map((account) => ({ id: account.id, name: account.name, number: account.number, balance: amounts.get(account.id) || 0 })),
         transactions: transactions.map((transaction) => ({
