@@ -12,8 +12,15 @@ export async function api<T>(url: string, method = "GET", body?: unknown): Promi
         body: body === undefined ? undefined : JSON.stringify(body),
         cache: "no-store",
     });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Request failed.");
+    const contentType = response.headers.get("content-type") || "";
+    let result: T | { error?: string };
+    try {
+        if (!contentType.includes("application/json")) throw new Error("Non-JSON response");
+        result = await response.json();
+    } catch {
+        throw new Error(`Server returned an invalid response (HTTP ${response.status}). Check the deployment and database connection.`);
+    }
+    if (!response.ok) throw new Error((result as { error?: string }).error || `Request failed (HTTP ${response.status}).`);
     return result as T;
 }
 

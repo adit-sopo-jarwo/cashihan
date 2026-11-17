@@ -10,6 +10,9 @@ let database: Promise<Client> | undefined;
 async function openDb() {
     const remoteUrl = process.env.TURSO_DATABASE_URL;
     const remoteToken = process.env.TURSO_AUTH_TOKEN;
+    if (process.env.VERCEL && (!remoteUrl || !remoteToken)) {
+        throw new Error("Turso database settings are missing in Vercel.");
+    }
     if (remoteUrl && !remoteToken) throw new Error("TURSO_AUTH_TOKEN is required.");
 
     const localPath = resolve(/* turbopackIgnore: true */ process.env.CASHIHAN_DB_PATH || join(process.cwd(), ".data", "cashihan.sqlite"));
