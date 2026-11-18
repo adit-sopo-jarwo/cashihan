@@ -59,6 +59,7 @@ export function TransactionPage({ type }: { type: TransactionType }) {
     const [notice, setNotice] = useState<ToastNotice | null>(null);
     const dismissNotice = useCallback(() => setNotice(null), []);
     const [scanning, setScanning] = useState(false);
+    const [scanFeedback, setScanFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
     const [scanAccountId, setScanAccountId] = useState("");
     const uploadInputRef = useRef<HTMLInputElement>(null);
     const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +92,7 @@ export function TransactionPage({ type }: { type: TransactionType }) {
     }, []);
 
     function resetForm() {
+        setScanFeedback(null);
         setEditingId(null);
         setFormOpen(false);
         setAccountId(accounts[0]?.id || "");
@@ -169,7 +171,9 @@ export function TransactionPage({ type }: { type: TransactionType }) {
         if (!file) return;
         setError("");
         setMessage("");
+        setScanFeedback(null);
         if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) {
+            setScanFeedback({ type: "error", message: "Gagal memulai scan. Pilih gambar berukuran kurang dari 10 MB." });
             showError("Choose an image smaller than 10 MB.");
             return;
         }
@@ -186,48 +190,30 @@ export function TransactionPage({ type }: { type: TransactionType }) {
                 await worker.terminate();
             }
             const receipt = parseReceipt(text);
+            setFormOpen(true);
+            setEditingId(null);
+            setAccountId(source?.id || "");
+            setAmount(receipt.amount ? String(receipt.amount) : "");
+            setTitleValue(receipt.title);
+            setNote(type === "income" ? file.name : receipt.title);
             if (!source) {
-                setFormOpen(true);
-                setEditingId(null);
-                setAccountId("");
-                setAmount(receipt.amount ? String(receipt.amount) : "");
-                setTitleValue(receipt.title);
-                setNote(type === "income" ? file.name : receipt.title);
+                setScanFeedback({ type: "error", message: "Struk sudah dipindai. Tambahkan akun, periksa hasilnya, lalu simpan transaksi." });
                 showError("Add an account, then review and save the scanned transaction.");
                 return;
             }
             if (!receipt.amount) {
-                setFormOpen(true);
-                setEditingId(null);
-                setAccountId(source.id);
-                setAmount("");
-                setTitleValue(receipt.title);
-                setNote(file.name);
+                setScanFeedback({ type: "error", message: "Scan selesai, tetapi total belanja belum terbaca. Isi nominal di formulir, lalu simpan." });
                 showError("Total amount was not clear in the image. Enter it manually and save.");
                 return;
             }
             if (type === "expense" && source.balance < receipt.amount) {
-                setFormOpen(true);
-                setEditingId(null);
-                setAccountId(source.id);
-                setAmount(String(receipt.amount));
-                setTitleValue(receipt.title);
-                setNote(receipt.title);
+                setScanFeedback({ type: "error", message: `Nominal ${money(receipt.amount)} terbaca, tetapi melebihi saldo akun. Periksa sebelum menyimpan.` });
                 showError("The scanned amount exceeds this account's balance. Review before saving.");
                 return;
             }
-            const transaction: Transaction = {
-                id: crypto.randomUUID(), type, accountId: source.id,
-                title: type === "income" ? receipt.title : undefined,
-                amount: receipt.amount,
-                note: type === "income" ? file.name : receipt.title,
-                date: new Date().toISOString(),
-            };
-            if (await saveTransaction(transaction)) {
-                showSuccess(`${type === "income" ? "Income" : "Expense"} of ${money(receipt.amount)} recorded from ${file.name}.`);
-                resetForm();
-            }
+            setScanFeedback({ type: "success", message: `Struk berhasil dibaca: ${money(receipt.amount)}. Periksa formulir di bawah, lalu tekan Save Transaction.` });
         } catch {
+            setScanFeedback({ type: "error", message: "Gagal membaca gambar. Coba foto yang lebih terang dan jelas, atau isi transaksi secara manual." });
             showError("Could not scan this image. Check your connection or enter the transaction manually.");
         } finally {
             setScanning(false);
@@ -294,6 +280,7 @@ export function TransactionPage({ type }: { type: TransactionType }) {
                     <input ref={uploadInputRef} type="file" accept="image/*" onChange={scanImage} aria-label="Upload receipt image" className="sr-only" />
                     <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={scanImage} aria-label="Capture receipt image" className="sr-only" />
                 </div>}
+                {type !== "transfer" && (scanning || scanFeedback) && <p role={scanFeedback?.type === "error" ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border px-4 py-3 text-sm ${scanFeedback?.type === "error" ? "border-red-500/40 bg-red-950/40 text-red-200" : "border-emerald-500/40 bg-emerald-950/40 text-emerald-100"}`}>{scanning ? "Sedang membaca struk, tunggu sebentar..." : scanFeedback?.message}</p>}
                 {!loaded ? <p className="mt-6 text-slate-400">Loading transactions...</p> : !canCreate && <p className="mt-6 rounded-xl border border-[#34445c] bg-[#182131] p-4 text-sm text-slate-300">{type === "transfer" ? "Add at least two accounts" : "Add an account"} to save transactions.</p>}
                 {error && !formOpen && <p role="alert" className="mt-5 text-sm text-red-400">{error}</p>}
                 {message && <p role="status" className="mt-5 text-sm text-green-400">{message}</p>}
